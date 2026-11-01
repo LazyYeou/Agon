@@ -1,0 +1,14 @@
+[package]
+name = "pitwall-store"
+version.workspace = true
+edition.workspace = true
+[dependencies]
+pitwall-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "json"] }
+redis = { version = "0.32", features = ["tokio-comp"] }
+[dev-dependencies]
+pitwall-state.workspace = true
