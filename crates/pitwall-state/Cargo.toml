@@ -1,0 +1,7 @@
+[package]
+name = "pitwall-state"
+version.workspace = true
+edition.workspace = true
+[dependencies]
+pitwall-core.workspace = true
+serde_json.workspace = true
