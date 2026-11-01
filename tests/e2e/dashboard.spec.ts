@@ -55,6 +55,11 @@ test("mobile navigation and keyboard close work", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Map", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Track map" })).toBeVisible();
+  const marker = page.locator(".car-dot").first();
+  const dot = await marker.locator("circle").first().boundingBox();
+  expect(dot!.width).toBeGreaterThanOrEqual(16);
+  const target = await marker.locator(".car-hit-target").boundingBox();
+  expect(target!.width).toBeGreaterThanOrEqual(40);
   await page.getByRole("button", { name: "Tower", exact: true }).click();
   await page.getByRole("button", { name: "Open telemetry for NOR" }).click();
   await page.keyboard.press("Escape");

@@ -17,6 +17,7 @@ export default function TrackMap({
   const [labels, setLabels] = useState(true);
   const points = state.circuit.outline;
   const bounds = mapBounds(points);
+  const markerScale = Math.max(bounds[2], bounds[3]) / 250;
   const poly = (pts: [number, number][]) =>
     pts.map(([x, y]) => `${x},${y}`).join(" ");
   const drivers = Object.values(state.drivers).filter(
@@ -132,21 +133,25 @@ export default function TrackMap({
                   <title>
                     {d.driver.code} · P{d.position} · gap {num(d.gap)} s
                   </title>
-                  <circle
-                    r={selected === d.driver.number ? 12 : 8}
-                    fill={`#${d.driver.color}`}
-                    stroke="#0d1420"
-                    strokeWidth="3"
-                  />
-                  {labels ? (
-                    <text x="13" y="4" fill="#e4edf7" fontSize="12">
-                      {d.driver.code}
-                    </text>
-                  ) : null}
+                  <g transform={`scale(${markerScale})`}>
+                    <circle
+                      className="car-marker"
+                      r={selected === d.driver.number ? 12 : 8}
+                      fill={`#${d.driver.color}`}
+                      stroke="#0d1420"
+                      strokeWidth="2"
+                    />
+                    <circle className="car-hit-target" r="22" fill="transparent" />
+                    {labels ? (
+                      <text x="15" y="4" fill="#e4edf7" fontSize="12">
+                        {d.driver.code}
+                      </text>
+                    ) : null}
+                  </g>
                 </g>
               ))}
             {ghost ? (
-              <g transform={`translate(${ghost[0]},${ghost[1]})`}>
+              <g transform={`translate(${ghost[0]},${ghost[1]}) scale(${markerScale})`}>
                 <circle
                   r="17"
                   stroke="#e4edf7"
@@ -164,10 +169,10 @@ export default function TrackMap({
               <circle
                 cx={miniPoint[0]}
                 cy={miniPoint[1]}
-                r="13"
+                r={13 * markerScale}
                 fill="none"
                 stroke="#fff"
-                strokeWidth="3"
+                strokeWidth={3 * markerScale}
               />
             ) : null}
           </svg>

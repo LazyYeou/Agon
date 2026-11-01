@@ -582,7 +582,8 @@ small {
   cursor: pointer;
   transition: transform 0.25s linear;
 }
-.car-dot:hover circle {
+.car-dot:hover .car-marker,
+.car-dot:focus-visible .car-marker {
   stroke: #e4edf7;
   stroke-width: 3px;
 }
