@@ -1,0 +1,24 @@
+[package]
+name = "pitwall-api"
+version.workspace = true
+edition.workspace = true
+[dependencies]
+pitwall-core.workspace = true
+pitwall-state.workspace = true
+pitwall-predict.workspace = true
+pitwall-ingest.workspace = true
+pitwall-store.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+rmp-serde.workspace = true
+axum = { version = "0.8", features = ["ws", "query"] }
+tower-http = { version = "0.6", features = ["fs", "trace", "limit", "set-header"] }
+futures-util = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+[dev-dependencies]
+tokio-tungstenite = "0.28"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
