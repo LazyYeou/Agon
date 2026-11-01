@@ -1,0 +1,10 @@
+[package]
+name = "pitwall-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+rmp-serde.workspace = true

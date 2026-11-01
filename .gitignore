@@ -1,0 +1,14 @@
+/target/
+/node_modules/
+/pitwall-web/node_modules/
+/pitwall-web/dist/
+/data/
+/models/
+/.superpowers/
+/test-results/
+/playwright-report/
+/.venv/
+__pycache__/
+*.pyc
+.env
+*.log

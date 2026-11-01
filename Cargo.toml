@@ -1,0 +1,21 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+
+[workspace.dependencies]
+pitwall-core = { path = "crates/pitwall-core" }
+pitwall-state = { path = "crates/pitwall-state" }
+pitwall-predict = { path = "crates/pitwall-predict" }
+pitwall-ingest = { path = "crates/pitwall-ingest" }
+pitwall-store = { path = "crates/pitwall-store" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+ts-rs = { version = "11", features = ["chrono-impl", "serde-json-impl"] }
+rmp-serde = "1"

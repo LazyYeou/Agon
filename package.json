@@ -1,0 +1,13 @@
+{
+  "name": "agon",
+  "private": true,
+  "workspaces": ["pitwall-web"],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "npm run build -w pitwall-web",
+    "test": "npm run test -w pitwall-web",
+    "test:e2e": "playwright test",
+    "typecheck": "npm run typecheck -w pitwall-web"
+  },
+  "devDependencies": { "@playwright/test": "^1.56.1" }
+}
