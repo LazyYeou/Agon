@@ -1,0 +1,43 @@
+services:
+  app:
+    profiles: ["app"]
+    build: .
+    ports: ["127.0.0.1:3001:3001"]
+    environment:
+      DATABASE_URL: postgres://agon:agon-local@postgres:5432/agon
+      REDIS_URL: redis://redis:6379
+      OPENF1_USERNAME: ${OPENF1_USERNAME:-}
+      OPENF1_PASSWORD: ${OPENF1_PASSWORD:-}
+      LIVE_SESSION_KEY: ${LIVE_SESSION_KEY:-}
+      AGON_LIVE_ROLE: ${AGON_LIVE_ROLE:-primary}
+    volumes: ["app-data:/app/data"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+  postgres:
+    image: timescale/timescaledb:2.22.1-pg17
+    environment:
+      POSTGRES_USER: agon
+      POSTGRES_PASSWORD: agon-local
+      POSTGRES_DB: agon
+    ports: ["127.0.0.1:54329:5432"]
+    volumes: ["postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agon -d agon"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7.4-alpine
+    ports: ["127.0.0.1:63799:6379"]
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: ["redis:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  app-data:
+  postgres:
+  redis:

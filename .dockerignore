@@ -1,0 +1,12 @@
+.git
+target
+node_modules
+pitwall-web/node_modules
+pitwall-web/dist
+data
+.venv
+.superpowers
+test-results
+playwright-report
+models/smoke
+.env
