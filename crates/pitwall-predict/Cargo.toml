@@ -1,0 +1,11 @@
+[package]
+name = "pitwall-predict"
+version.workspace = true
+edition.workspace = true
+[dependencies]
+pitwall-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rand = "0.9"
+[dev-dependencies]
+pitwall-state.workspace = true

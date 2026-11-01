@@ -85,6 +85,7 @@ pub struct Lap {
     pub tyre_age: Option<u32>,
     pub position: Option<u32>,
     pub gap: Option<f64>,
+    pub interval: Option<f64>,
     pub status: String,
 }
 

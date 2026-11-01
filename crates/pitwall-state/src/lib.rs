@@ -95,6 +95,7 @@ impl RaceState {
                     }
                     lap.position = d.position;
                     lap.gap = d.gap;
+                    lap.interval = d.interval;
                     lap.status = self.snapshot.track_status.clone();
                     if let Some(stint) = d.stints.iter().rev().find(|s| s.start_lap <= lap.number) {
                         lap.compound = stint.compound.clone();
