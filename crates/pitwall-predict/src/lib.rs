@@ -2,7 +2,11 @@
 use pitwall_core::*;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
+mod analysis;
+mod model;
 mod score;
+mod simulation;
+pub use model::ModelBundle;
 pub use score::*;
 
 fn band(value: f64, width: f64) -> Band {
@@ -11,49 +15,6 @@ fn band(value: f64, width: f64) -> Band {
         low: value - width,
         high: value + width,
     }
-}
-fn regression(d: &DriverState) -> Option<(f64, f64, f64)> {
-    let start = d.stints.last().map_or(1, |s| s.start_lap);
-    let samples: Vec<_> = d
-        .laps
-        .iter()
-        .filter(|l| {
-            l.number >= start
-                && !l.pit_in
-                && !l.pit_out
-                && l.status == "GREEN"
-                && l.interval.is_none_or(|v| v >= 1.5 || v == 0.0)
-        })
-        .filter_map(|l| {
-            l.duration
-                .map(|y| (l.number as f64, y + l.number as f64 * 0.035))
-        })
-        .collect();
-    if samples.len() < 3 {
-        return None;
-    }
-    let n = samples.len() as f64;
-    let mx = samples.iter().map(|(x, _)| x).sum::<f64>() / n;
-    let my = samples.iter().map(|(_, y)| y).sum::<f64>() / n;
-    let xx = samples.iter().map(|(x, _)| (x - mx).powi(2)).sum::<f64>();
-    // A weak zero-slope prior stabilizes short stints; fuel correction remains an explicit approximation.
-    let slope = samples
-        .iter()
-        .map(|(x, y)| (x - mx) * (y - my))
-        .sum::<f64>()
-        / (xx + 2.0);
-    let residual = (samples
-        .iter()
-        .map(|(x, y)| (y - (my + slope * (x - mx))).powi(2))
-        .sum::<f64>()
-        / n)
-        .sqrt()
-        .max(0.18);
-    Some((
-        my + slope * (d.lap as f64 + 1.0 - mx) - (d.lap as f64 + 1.0) * 0.035,
-        slope,
-        residual,
-    ))
 }
 
 pub fn predict(s: &Snapshot) -> Vec<Prediction> {
@@ -64,7 +25,7 @@ pub fn predict(s: &Snapshot) -> Vec<Prediction> {
         .drivers
         .values()
         .map(|d| {
-            let fitted = regression(d);
+            let fitted = analysis::regression(s, d);
             let confidence = if paused {
                 0.0
             } else if low {
@@ -76,20 +37,20 @@ pub fn predict(s: &Snapshot) -> Vec<Prediction> {
                 vec![]
             } else {
                 fitted
-                    .map(|(next, deg, sd)| {
+                    .as_ref().map(|fit| {
                         (1..=5)
                             .map(|h| {
                                 band(
-                                    next + (h - 1) as f64 * (deg - 0.035),
-                                    sd * (h as f64).sqrt() * if low { 3.0 } else { 1.65 },
+                                    fit.next + (h - 1) as f64 * (fit.degradation.value - 0.035),
+                                    fit.sd * (h as f64).sqrt() * if low { 3.0 } else { 1.65 },
                                 )
                             })
                             .collect()
                     })
                     .unwrap_or_default()
             };
-            let deg = fitted.map(|(_, v, sd)| band(v, sd / (d.laps.len() as f64).sqrt().max(1.0)));
-            let age = d.laps.last().and_then(|l| l.tyre_age).unwrap_or(0);
+            let deg = fitted.as_ref().map(|fit| fit.degradation.clone());
+            let age=d.tyre_age;
             let mut lengths: Vec<_> = s
                 .drivers
                 .values()
@@ -103,7 +64,7 @@ pub fn predict(s: &Snapshot) -> Vec<Prediction> {
                                 .is_some_and(|current| current.compound == st.compound)
                         })
                         .filter_map(|st| {
-                            st.end_lap.map(|end| {
+                            st.end_lap.filter(|end| *end <= other.lap).map(|end| {
                                 end.saturating_sub(st.start_lap) + 1 + st.tyre_age_at_start
                             })
                         })
@@ -114,7 +75,7 @@ pub fn predict(s: &Snapshot) -> Vec<Prediction> {
             let pit_window = if paused {
                 None
             } else {
-                typical.map(|length| {
+                typical.zip(age).map(|(length,age)| {
                     let remaining = length.saturating_sub(age).max(1);
                     let center = d.lap + remaining;
                     let from = center.saturating_sub(3).max(d.lap + 1);
@@ -130,14 +91,10 @@ pub fn predict(s: &Snapshot) -> Vec<Prediction> {
                     }
                 })
             };
-            let cliff = fitted
-                .filter(|(_, deg, _)| *deg > 0.02)
-                .map(|(_, deg, _)| band((2.0 / deg).clamp(0.0, 60.0), 10.0));
-            let cliff = cliff.map(|mut b| {
-                b.low = b.low.max(0.0);
-                b
-            });
-            let tyre_health = typical.map(|length| {
+            let cliff = fitted.as_ref().and_then(|fit| fit.cliff_lap.map(|_| Band {
+                value: 0.0, low: 0.0, high: 3.0,
+            }));
+            let tyre_health = typical.zip(age).map(|(length,age)| {
                 let v = (1.0 - age as f64 / length.max(1) as f64).clamp(0.0, 1.0);
                 Band {
                     value: v,
@@ -146,11 +103,11 @@ pub fn predict(s: &Snapshot) -> Vec<Prediction> {
                 }
             });
             let factors = vec![
-                format!("Tyre age: {age} completed laps"),
-                fitted.map_or(
+                age.map_or_else(||"Tyre age: unavailable".into(),|age|format!("Tyre age: {age} completed laps")),
+                fitted.as_ref().map_or(
                     "Insufficient clean laps in this stint".into(),
-                    |(_, deg, _)| {
-                        format!("Fuel-corrected degradation: {deg:+.3} s/lap (approximate)")
+                    |fit| {
+                        format!("Bayesian fuel-corrected degradation: {:+.3} s/lap (approximate)", fit.degradation.value)
                     },
                 ),
                 format!(
@@ -162,18 +119,19 @@ pub fn predict(s: &Snapshot) -> Vec<Prediction> {
             ];
             let insight = if paused {
                 "Predictions paused during red flag".into()
-            } else if let Some((_, deg, _)) = fitted {
-                format!(
-                    "{}: observed stint trend {deg:+.2} s/lap. Estimates are not calibrated.",
-                    d.driver.code
-                )
+            } else if let Some(fit) = &fitted {
+                if let Some(lap) = fit.cliff_lap {
+                    format!("{}: observed stint changepoint near lap {lap}; sustained pace loss may indicate a tyre cliff. Uncalibrated estimate.", d.driver.code)
+                } else {
+                    format!("{}: Bayesian stint trend {:+.2} s/lap. No observed cliff changepoint; estimates are not calibrated.", d.driver.code, fit.degradation.value)
+                }
             } else {
                 "Complete at least three clean laps in this stint for a pace estimate.".into()
             };
             Prediction {
                 driver: d.driver.number,
                 lap: d.lap,
-                model: "basic-v1".into(),
+                model: "basic-bayesian-v2".into(),
                 label: "basic estimate · uncalibrated".into(),
                 status: if paused {
                     "paused"
@@ -193,6 +151,7 @@ pub fn predict(s: &Snapshot) -> Vec<Prediction> {
                 pit_window,
                 finish: vec![],
                 rejoin: None,
+                qualifying_need: None,
                 factors,
                 insight,
             }
@@ -201,36 +160,29 @@ pub fn predict(s: &Snapshot) -> Vec<Prediction> {
     if paused {
         return outputs;
     }
-    if let Some(total) = s.session.total_laps {
-        let mut counts = vec![vec![0u32; outputs.len()]; outputs.len()];
-        let mut rng = StdRng::seed_from_u64(s.session.key as u64 * 10000 + s.lap as u64);
-        for _ in 0..1000 {
-            let mut times: Vec<_> = outputs
-                .iter()
-                .enumerate()
-                .filter_map(|(i, p)| {
-                    let d = &s.drivers[&p.driver];
-                    let pace = p.pace.first()?;
-                    let remaining = total.saturating_sub(d.lap) as f64;
-                    let noise =
-                        rng.random_range(-1.0..1.0) * (pace.high - pace.low) * remaining.sqrt();
-                    Some((i, d.gap.unwrap_or(0.0) + remaining * pace.value + noise))
-                })
-                .collect();
-            times.sort_by(|a, b| a.1.total_cmp(&b.1));
-            for (position, (i, _)) in times.iter().enumerate() {
-                counts[*i][position] += 1;
-            }
-        }
-        for (i, p) in outputs.iter_mut().enumerate() {
-            p.finish = counts[i]
-                .iter()
-                .enumerate()
-                .filter(|(_, n)| **n > 0)
-                .map(|(pos, n)| (pos as u32 + 1, *n as f64 / 1000.0))
-                .collect();
+    model::apply_models(s, &mut outputs);
+    for p in &mut outputs {
+        if let Some(alert) = analysis::anomaly(s, &s.drivers[&p.driver]) {
+            p.factors[2] = alert.clone();
+            p.insight = format!("{} {alert}", p.insight);
         }
     }
+    if s.session.name.to_lowercase().contains("qualifying") {
+        let phase = s.qualifying_phase.or_else(|| {
+            if s.session.name.contains("Q1") {
+                Some(1)
+            } else if s.session.name.contains("Q2") {
+                Some(2)
+            } else {
+                None
+            }
+        });
+        if let Some(phase @ 1..=2) = phase {
+            analysis::qualifying(s, &mut outputs, phase);
+        }
+        return outputs;
+    }
+    simulation::finish(s, &mut outputs);
     if let Some(loss) = &s.circuit.pit_loss {
         for p in &mut outputs {
             let gap = s.drivers[&p.driver].gap;
@@ -259,19 +211,75 @@ pub fn predict(s: &Snapshot) -> Vec<Prediction> {
 pub struct StrategyEstimate {
     pub undercut: Option<Band>,
     pub overcut: Option<Band>,
+    pub undercut_success: Option<f64>,
+    pub overcut_success: Option<f64>,
     pub assumptions: Vec<String>,
 }
 pub fn undercut(s: &Snapshot, a: u32, b: u32) -> StrategyEstimate {
     let ps = predict(s);
     let first = ps.iter().find(|p| p.driver == a);
     let second = ps.iter().find(|p| p.driver == b);
-    let mut out=StrategyEstimate {undercut:None,overcut:None,assumptions:vec!["One-lap pit offset; equal pit losses; out-lap warm-up is not calibrated.".into(),"Positive advantage means time gained on the other driver, not guaranteed track position.".into()]};
+    let mut out=StrategyEstimate {undercut:None,overcut:None,undercut_success:None,overcut_success:None,assumptions:vec!["Two-lap simulation with one-lap pit offset, pace/degradation bands and independent pit-loss uncertainty.".into(),"Out-lap warm-up penalty assumed 0–3 seconds; fresh-tyre pace extrapolates the stint fit. Basic, uncalibrated estimate.".into(),"Positive advantage is time gained after both drivers pit. Success means the simulated relative gap crosses zero.".into()]};
     if let (Some(pa), Some(pb), Some(loss)) = (first, second, &s.circuit.pit_loss) {
         if let (Some(x), Some(y)) = (pa.pace.first(), pb.pace.first()) {
-            let advantage = y.value - x.value;
-            let width = (x.high - x.low) + (y.high - y.low) + (loss.high - loss.low);
-            out.undercut = Some(band(advantage, width));
-            out.overcut = Some(band(-advantage, width));
+            let (Some(da), Some(db)) = (s.drivers.get(&a), s.drivers.get(&b)) else {
+                return out;
+            };
+            let (Some(ga), Some(gb), Some(dega), Some(degb)) =
+                (da.gap, db.gap, &pa.degradation, &pb.degradation)
+            else {
+                return out;
+            };
+            let gap = ga - gb;
+            let (Some(agea), Some(ageb)) = (da.tyre_age, db.tyre_age) else {
+                return out;
+            };
+            let agea = agea as f64;
+            let ageb = ageb as f64;
+            let mut rng = StdRng::seed_from_u64(a as u64 * 10000 + b as u64 + s.lap as u64);
+            let mut under = vec![];
+            let mut over = vec![];
+            let mut under_success = 0;
+            let mut over_success = 0;
+            let sample = |rng: &mut StdRng, b: &Band| {
+                if b.high > b.low {
+                    rng.random_range(b.low..b.high)
+                } else {
+                    b.value
+                }
+            };
+            for _ in 0..1000 {
+                let olda = sample(&mut rng, x);
+                let oldb = sample(&mut rng, y);
+                let fresha = olda - sample(&mut rng, dega).max(0.0) * agea;
+                let freshb = oldb - sample(&mut rng, degb).max(0.0) * ageb;
+                let outa = fresha + rng.random_range(0.0..3.0);
+                let outb = freshb + rng.random_range(0.0..3.0);
+                let lossa = sample(&mut rng, loss);
+                let lossb = sample(&mut rng, loss);
+                let after_under = gap + lossa + outa + fresha - oldb - lossb - outb;
+                let after_over = gap + olda + lossa + outa - lossb - outb - freshb;
+                under.push(gap - after_under);
+                over.push(gap - after_over);
+                if after_under < 0.0 {
+                    under_success += 1;
+                }
+                if after_over < 0.0 {
+                    over_success += 1;
+                }
+            }
+            let quantile = |values: &mut Vec<f64>| {
+                values.sort_by(f64::total_cmp);
+                Band {
+                    value: values[500],
+                    low: values[100],
+                    high: values[900],
+                }
+            };
+            out.undercut = Some(quantile(&mut under));
+            out.overcut = Some(quantile(&mut over));
+            out.undercut_success = Some(under_success as f64 / 1000.0);
+            out.overcut_success = Some(over_success as f64 / 1000.0);
             out.assumptions.push(format!(
                 "Pit loss {:.1}–{:.1} s; gap {} s",
                 loss.low,

@@ -2,4 +2,4 @@
 import type { Band } from "./Band";
 import type { PitWindow } from "./PitWindow";
 
-export type Prediction = { driver: number, lap: number, model: string, label: string, status: string, confidence: number, pace: Array<Band>, degradation: Band | null, laps_to_cliff: Band | null, tyre_health: Band | null, pit_window: PitWindow | null, finish: Array<[number, number]>, rejoin: Band | null, factors: Array<string>, insight: string, };
+export type Prediction = { driver: number, lap: number, model: string, label: string, status: string, confidence: number, pace: Array<Band>, degradation: Band | null, laps_to_cliff: Band | null, tyre_health: Band | null, pit_window: PitWindow | null, finish: Array<[number, number]>, rejoin: Band | null, qualifying_need: Band | null, factors: Array<string>, insight: string, };

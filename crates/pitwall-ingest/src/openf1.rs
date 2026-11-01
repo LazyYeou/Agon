@@ -6,13 +6,71 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
+const ENDPOINTS: [&str; 12] = [
+    "sessions",
+    "drivers",
+    "laps",
+    "stints",
+    "position",
+    "intervals",
+    "pit",
+    "race_control",
+    "weather",
+    "location",
+    "car_data",
+    "meetings",
+];
+pub fn openf1_url(endpoint: &str, params: &[(&str, String)]) -> Result<reqwest::Url> {
+    anyhow::ensure!(ENDPOINTS.contains(&endpoint), "Unsupported data view");
+    let mut url = reqwest::Url::parse(&format!("https://api.openf1.org/v1/{endpoint}"))?;
+    for (key, value) in params {
+        // The URL's key/value delimiter supplies '=' in OpenF1's comparison expression.
+        let key = if key.ends_with(">=") || key.ends_with("<=") {
+            key.trim_end_matches('=')
+        } else {
+            key
+        };
+        url.query_pairs_mut().append_pair(key, value);
+    }
+    Ok(url)
+}
+pub fn attach_locations(samples: &mut [TelemetrySample], events: Vec<RaceEvent>) {
+    let mut positions: Vec<_> = events
+        .into_iter()
+        .filter_map(|e| {
+            if let EventData::Location(x, y) = e.payload {
+                Some((e.time_ms, x, y))
+            } else {
+                None
+            }
+        })
+        .collect();
+    positions.sort_by_key(|p| p.0);
+    for sample in samples {
+        let index = positions.partition_point(|p| p.0 < sample.time_ms);
+        let closest = [
+            index.checked_sub(1).and_then(|i| positions.get(i)),
+            positions.get(index),
+        ]
+        .into_iter()
+        .flatten()
+        .min_by_key(|p| p.0.abs_diff(sample.time_ms));
+        if let Some((time, x, y)) = closest.filter(|p| p.0.abs_diff(sample.time_ms) <= 500) {
+            let _ = time;
+            sample.x = Some(*x);
+            sample.y = Some(*y);
+        }
+    }
+}
+
+type QueryCache = HashMap<String, (Instant, Arc<Vec<Value>>)>;
 
 #[derive(Clone)]
 pub struct OpenF1 {
     client: reqwest::Client,
     gate: Arc<Mutex<Instant>>,
-    cache: Arc<Mutex<HashMap<String, Arc<Vec<Value>>>>>,
-    token: Option<String>,
+    cache: Arc<Mutex<QueryCache>>,
+    token: Arc<Mutex<(Option<String>, Instant)>>,
 }
 impl OpenF1 {
     pub fn new() -> Result<Self> {
@@ -23,35 +81,55 @@ impl OpenF1 {
                 .build()?,
             gate: Arc::new(Mutex::new(Instant::now() - Duration::from_secs(3))),
             cache: Arc::new(Mutex::new(HashMap::new())),
-            token: std::env::var("OPENF1_TOKEN").ok(),
+            token: Arc::new(Mutex::new((
+                std::env::var("OPENF1_TOKEN")
+                    .ok()
+                    .filter(|v| !v.trim().is_empty()),
+                Instant::now(),
+            ))),
         })
+    }
+    pub async fn access_token(&self) -> Result<Option<String>> {
+        let mut token = self.token.lock().await;
+        if token.0.is_some() && token.1.elapsed() < Duration::from_secs(3500) {
+            return Ok(token.0.clone());
+        }
+        if let (Some(user), Some(password)) = (
+            std::env::var("OPENF1_USERNAME")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            std::env::var("OPENF1_PASSWORD")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+        ) {
+            let response = self
+                .client
+                .post("https://api.openf1.org/token")
+                .form(&[("username", user), ("password", password)])
+                .send()
+                .await?
+                .error_for_status()?;
+            let value: Value = response.json().await?;
+            let access = value["access_token"]
+                .as_str()
+                .context("OpenF1 authentication did not return a token")?
+                .to_string();
+            *token = (Some(access.clone()), Instant::now());
+            return Ok(Some(access));
+        }
+        Ok(token.0.clone())
     }
     pub async fn query(
         &self,
         endpoint: &str,
         params: &[(&str, String)],
     ) -> Result<Arc<Vec<Value>>> {
-        if ![
-            "sessions",
-            "drivers",
-            "laps",
-            "stints",
-            "position",
-            "intervals",
-            "pit",
-            "race_control",
-            "weather",
-            "location",
-            "car_data",
-            "meetings",
-        ]
-        .contains(&endpoint)
-        {
-            bail!("Unsupported data view");
-        }
+        let url = openf1_url(endpoint, params)?;
         let key = format!("{endpoint}{params:?}");
-        if let Some(hit) = self.cache.lock().await.get(&key).cloned() {
-            return Ok(hit);
+        if let Some((at, hit)) = self.cache.lock().await.get(&key).cloned() {
+            if at.elapsed() < Duration::from_secs(60) {
+                return Ok(hit);
+            }
         }
         for attempt in 0..3 {
             let mut gate = self.gate.lock().await;
@@ -59,32 +137,39 @@ impl OpenF1 {
             if elapsed < Duration::from_millis(2100) {
                 tokio::time::sleep(Duration::from_millis(2100) - elapsed).await;
             }
-            *gate = Instant::now();
-            let mut request = self
-                .client
-                .get(format!("https://api.openf1.org/v1/{endpoint}"))
-                .query(params);
-            if let Some(token) = &self.token {
-                request = request.bearer_auth(token);
-            }
-            let response = request.send().await?;
-            drop(gate);
-            if response.status().as_u16() == 429 || response.status().is_server_error() {
-                if attempt < 2 {
-                    tokio::time::sleep(Duration::from_secs(3 * (attempt + 1))).await;
-                    continue;
+            if let Some((at, hit)) = self.cache.lock().await.get(&key).cloned() {
+                if at.elapsed() < Duration::from_secs(60) {
+                    return Ok(hit);
                 }
             }
-            let response = response.error_for_status().context(
-                "OpenF1 request failed (historical data or sponsor access may be unavailable)",
-            )?;
+            *gate = Instant::now();
+            let mut request = self.client.get(url.clone());
+            if let Some(token) = self.access_token().await? {
+                request = request.bearer_auth(token);
+            }
+            let mut response = request.send().await?;
+            drop(gate);
+            if (response.status().as_u16() == 429 || response.status().is_server_error())
+                && attempt < 2
+            {
+                tokio::time::sleep(Duration::from_secs(3 * (attempt + 1))).await;
+                continue;
+            }
             if response
                 .content_length()
                 .is_some_and(|n| n > 64 * 1024 * 1024)
             {
                 bail!("Source response exceeds session data limit");
             }
-            let rows: Vec<Value> = response.json().await?;
+            let status = response.status().as_u16();
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response.chunk().await? {
+                if bytes.len() + chunk.len() > 64 * 1024 * 1024 {
+                    bail!("Source response exceeds session data limit");
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            let rows = decode_rows(status, &bytes)?;
             if rows.len() > 500_000 {
                 bail!("Source response too large; use a smaller range");
             }
@@ -93,7 +178,7 @@ impl OpenF1 {
             if cache.len() >= 128 {
                 cache.clear();
             }
-            cache.insert(key, rows.clone());
+            cache.insert(key, (Instant::now(), rows.clone()));
             return Ok(rows);
         }
         bail!("OpenF1 unavailable after retries")
@@ -116,7 +201,7 @@ impl OpenF1 {
         start: i64,
         end: i64,
     ) -> Result<Vec<TelemetrySample>> {
-        if driver == 0 || driver > 999 || end <= start || end - start > 180_000 {
+        if driver == 0 || driver > 999 || !valid_time_range(start, end, 180_000) {
             bail!("Choose a driver and a range up to 180 seconds");
         }
         let date = |v| {
@@ -147,7 +232,53 @@ impl OpenF1 {
             })
             .collect();
         samples.sort_by_key(|s| s.time_ms);
+        if !samples.is_empty() {
+            let positions = self
+                .query(
+                    "location",
+                    &[
+                        ("session_key", key.to_string()),
+                        ("driver_number", driver.to_string()),
+                        ("date>=", date(start)?),
+                        ("date<=", date(end)?),
+                    ],
+                )
+                .await?;
+            attach_locations(
+                &mut samples,
+                positions
+                    .iter()
+                    .filter_map(|row| normalize("location", row, None))
+                    .collect(),
+            );
+        }
         Ok(samples)
+    }
+    pub async fn locations(&self, key: u32, start: i64, end: i64) -> Result<Vec<RaceEvent>> {
+        if !valid_time_range(start, end, 120_000) {
+            bail!("Position window must be within 120 seconds");
+        }
+        let date = |v| {
+            chrono::DateTime::from_timestamp_millis(v)
+                .map(|d| d.to_rfc3339())
+                .context("Invalid time")
+        };
+        let rows = self
+            .query(
+                "location",
+                &[
+                    ("session_key", key.to_string()),
+                    ("date>=", date(start)?),
+                    ("date<=", date(end)?),
+                ],
+            )
+            .await?;
+        let mut events: Vec<_> = rows
+            .iter()
+            .filter_map(|row| normalize("location", row, None))
+            .collect();
+        events.sort_by_key(|e| e.time_ms);
+        Ok(events)
     }
     pub async fn load_archive(&self, key: u32) -> Result<SessionArchive> {
         if key == 0 {
@@ -190,6 +321,7 @@ impl OpenF1 {
                     if let EventData::Control(message) = &event.payload {
                         if let Some(status) = status_from_control(message) {
                             events.push(RaceEvent {
+                                source_time_ms: None,
                                 time_ms: event.time_ms,
                                 driver: None,
                                 payload: EventData::Status(status),
@@ -215,18 +347,9 @@ impl OpenF1 {
                 })
                 .and_then(|v| timestamp(&v["date_start"]));
             if let Some(time_ms) = time {
-                events.push(RaceEvent {
-                    time_ms,
-                    driver: Some(driver),
-                    payload: EventData::Stint(Stint {
-                        number: row["stint_number"].as_u64().unwrap_or(1) as u32,
-                        compound: row["compound"].as_str().unwrap_or("UNKNOWN").into(),
-                        start_lap: start,
-                        end_lap: None,
-                        tyre_age_at_start: row["tyre_age_at_start"].as_u64().unwrap_or(0) as u32,
-                        is_new: row["tyre_age_at_start"].as_u64().map(|n| n == 0),
-                    }),
-                });
+                if let Some(event) = normalize("stints", row, Some(time_ms)) {
+                    events.push(event);
+                }
             }
         }
         // One reference lap is enough for an approximate outline; full telemetry stays on demand.
@@ -281,6 +404,7 @@ impl OpenF1 {
         }
         events.sort_by_key(|e| e.time_ms);
         Ok(SessionArchive {
+            captured_at_ms: Some(chrono::Utc::now().timestamp_millis()),
             session,
             drivers,
             events,

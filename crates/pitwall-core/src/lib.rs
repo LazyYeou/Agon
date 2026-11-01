@@ -2,6 +2,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use ts_rs::TS;
+pub fn valid_time_range(start: i64, end: i64, max_ms: i64) -> bool {
+    end.checked_sub(start)
+        .is_some_and(|length| length > 0 && length <= max_ms)
+}
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export, export_to = "../../../pitwall-web/src/types/")]
@@ -77,6 +81,7 @@ pub struct Lap {
     #[ts(type = "number")]
     pub time_ms: i64,
     pub duration: Option<f64>,
+    pub speed_trap: Option<f64>,
     pub sectors: Vec<Option<f64>>,
     pub segments: Vec<u16>,
     pub pit_out: bool,
@@ -131,6 +136,7 @@ pub struct ControlMessage {
     pub category: String,
     pub flag: Option<String>,
     pub sector: Option<u32>,
+    pub qualifying_phase: Option<u8>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
@@ -179,6 +185,7 @@ pub struct Prediction {
     pub pit_window: Option<PitWindow>,
     pub finish: Vec<(u32, f64)>,
     pub rejoin: Option<Band>,
+    pub qualifying_need: Option<Band>,
     pub factors: Vec<String>,
     pub insight: String,
 }
@@ -193,6 +200,8 @@ pub struct DriverState {
     pub interval: Option<f64>,
     pub lap: u32,
     pub laps: Vec<Lap>,
+    pub partial_lap: Option<Lap>,
+    pub tyre_age: Option<u32>,
     pub stints: Vec<Stint>,
     pub pits: Vec<Pit>,
     pub in_pit: bool,
@@ -229,6 +238,9 @@ pub struct Snapshot {
     pub drivers: BTreeMap<u32, DriverState>,
     pub messages: Vec<ControlMessage>,
     pub circuit: Circuit,
+    pub qualifying_phase: Option<u8>,
+    #[ts(type = "number | null")]
+    pub qualifying_start_ms: Option<i64>,
     #[ts(type = "number")]
     pub revision: u64,
 }
@@ -246,6 +258,8 @@ impl Snapshot {
             drivers: BTreeMap::new(),
             messages: vec![],
             circuit: Circuit::default(),
+            qualifying_phase: None,
+            qualifying_start_ms: None,
             revision: 0,
         }
     }
@@ -253,6 +267,8 @@ impl Snapshot {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct RaceEvent {
+    #[serde(default)]
+    pub source_time_ms: Option<i64>,
     pub time_ms: i64,
     pub driver: Option<u32>,
     pub payload: EventData,
@@ -261,6 +277,7 @@ pub struct RaceEvent {
 #[serde(tag = "kind", content = "data", rename_all = "snake_case")]
 pub enum EventData {
     Lap(Lap),
+    Sectors(Lap),
     Stint(Stint),
     Pit(Pit),
     Telemetry(TelemetrySample),
@@ -277,16 +294,32 @@ pub enum EventData {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SessionArchive {
+    #[serde(default)]
+    pub captured_at_ms: Option<i64>,
     pub session: Session,
     pub drivers: Vec<Driver>,
     pub events: Vec<RaceEvent>,
     pub circuit: Circuit,
+}
+impl SessionArchive {
+    pub fn reusable_at(&self, now: i64) -> bool {
+        self.session.synthetic
+            || self.captured_at_ms.is_some_and(|captured| {
+                (self.session.end_ms > 0 && captured.saturating_sub(self.session.end_ms) >= 60_000)
+                    || (0..60_000).contains(&now.saturating_sub(captured))
+            })
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export, export_to = "../../../pitwall-web/src/types/")]
 pub enum ServerFrame {
+    Evaluation {
+        generation: u32,
+        forecasts: Vec<PaceForecast>,
+        report: AccuracyReport,
+    },
     Snapshot {
         sequence: u32,
         generation: u32,
@@ -309,6 +342,7 @@ pub enum ServerFrame {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export, export_to = "../../../pitwall-web/src/types/")]
 pub enum ClientCommand {
+    Live,
     Open {
         session: u32,
     },
@@ -326,4 +360,26 @@ pub enum ClientCommand {
         driver: Option<u32>,
     },
     Resync,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../pitwall-web/src/types/")]
+pub struct PaceForecast {
+    pub session: u32,
+    pub driver: u32,
+    pub issued_lap: u32,
+    pub target_lap: u32,
+    pub band: Band,
+    pub actual: Option<f64>,
+    pub model: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../pitwall-web/src/types/")]
+pub struct AccuracyReport {
+    pub pace_samples: usize,
+    pub pace_mae: Option<f64>,
+    pub band_coverage: Option<f64>,
+    pub pit_samples: usize,
+    pub pit_accuracy: Option<f64>,
+    pub position_samples: usize,
+    pub position_accuracy: Option<f64>,
 }

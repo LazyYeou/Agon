@@ -65,11 +65,13 @@ pub fn demo_archive() -> SessionArchive {
     };
     let mut events = vec![
         RaceEvent {
+            source_time_ms: None,
             time_ms: start,
             driver: None,
             payload: EventData::Status("GREEN".into()),
         },
         RaceEvent {
+            source_time_ms: None,
             time_ms: start,
             driver: None,
             payload: EventData::Weather(Weather {
@@ -85,11 +87,13 @@ pub fn demo_archive() -> SessionArchive {
     for (i, driver) in drivers.iter().enumerate() {
         let n = Some(driver.number);
         events.push(RaceEvent {
+            source_time_ms: None,
             time_ms: start,
             driver: n,
             payload: EventData::Position(i as u32 + 1),
         });
         events.push(RaceEvent {
+            source_time_ms: None,
             time_ms: start,
             driver: n,
             payload: EventData::Stint(Stint {
@@ -113,6 +117,7 @@ pub fn demo_archive() -> SessionArchive {
                 let (x, y) = point(progress);
                 let time = t + sample * 500;
                 events.push(RaceEvent {
+                    source_time_ms: None,
                     time_ms: time,
                     driver: n,
                     payload: EventData::Telemetry(TelemetrySample {
@@ -128,6 +133,7 @@ pub fn demo_archive() -> SessionArchive {
                     }),
                 });
                 events.push(RaceEvent {
+                    source_time_ms: None,
                     time_ms: time,
                     driver: n,
                     payload: EventData::Location(x, y),
@@ -135,6 +141,7 @@ pub fn demo_archive() -> SessionArchive {
             }
             t += (duration * 1000.0) as i64;
             events.push(RaceEvent {
+                source_time_ms: None,
                 time_ms: t,
                 driver: n,
                 payload: EventData::Interval {
@@ -143,12 +150,14 @@ pub fn demo_archive() -> SessionArchive {
                 },
             });
             events.push(RaceEvent {
+                source_time_ms: None,
                 time_ms: t,
                 driver: n,
                 payload: EventData::Lap(Lap {
                     number: lap,
                     time_ms: t,
                     duration: Some(duration),
+                    speed_trap: Some(315.0 + (i % 9) as f64),
                     sectors: vec![
                         Some(duration * 0.31),
                         Some(duration * 0.36),
@@ -160,6 +169,7 @@ pub fn demo_archive() -> SessionArchive {
             });
             if lap == 7 {
                 events.push(RaceEvent {
+                    source_time_ms: None,
                     time_ms: t + 1,
                     driver: n,
                     payload: EventData::Pit(Pit {
@@ -170,6 +180,7 @@ pub fn demo_archive() -> SessionArchive {
                     }),
                 });
                 events.push(RaceEvent {
+                    source_time_ms: None,
                     time_ms: t + 23_000,
                     driver: n,
                     payload: EventData::Stint(Stint {
@@ -195,11 +206,13 @@ pub fn demo_archive() -> SessionArchive {
         (740_000, "GREEN", "Safety car in this lap — track clear"),
     ] {
         events.push(RaceEvent {
+            source_time_ms: None,
             time_ms: start + offset,
             driver: None,
             payload: EventData::Status(flag.into()),
         });
         events.push(RaceEvent {
+            source_time_ms: None,
             time_ms: start + offset,
             driver: None,
             payload: EventData::Control(ControlMessage {
@@ -209,11 +222,13 @@ pub fn demo_archive() -> SessionArchive {
                 category: "Flag".into(),
                 flag: Some(flag.into()),
                 sector: None,
+                qualifying_phase: None,
             }),
         });
     }
     events.sort_by_key(|e| e.time_ms);
     SessionArchive {
+        captured_at_ms: None,
         session,
         drivers,
         events,

@@ -6,4 +6,4 @@ import type { Prediction } from "./Prediction";
 import type { Stint } from "./Stint";
 import type { TelemetrySample } from "./TelemetrySample";
 
-export type DriverState = { driver: Driver, position: number | null, start_position: number | null, gap: number | null, interval: number | null, lap: number, laps: Array<Lap>, stints: Array<Stint>, pits: Array<Pit>, in_pit: boolean, telemetry: TelemetrySample | null, location: [number, number] | null, prediction: Prediction | null, };
+export type DriverState = { driver: Driver, position: number | null, start_position: number | null, gap: number | null, interval: number | null, lap: number, laps: Array<Lap>, partial_lap: Lap | null, tyre_age: number | null, stints: Array<Stint>, pits: Array<Pit>, in_pit: boolean, telemetry: TelemetrySample | null, location: [number, number] | null, prediction: Prediction | null, };

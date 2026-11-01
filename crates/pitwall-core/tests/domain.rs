@@ -1,7 +1,29 @@
 use pitwall_core::*;
 
 #[test]
+fn unfinished_archive_cache_expires_and_final_capture_is_reusable() {
+    let mut archive = SessionArchive {
+        captured_at_ms: None,
+        session: Session {
+            end_ms: 100_000,
+            ..Default::default()
+        },
+        drivers: vec![],
+        events: vec![],
+        circuit: Circuit::default(),
+    };
+    assert!(!archive.reusable_at(200_000));
+    archive.captured_at_ms = Some(50_000);
+    assert!(archive.reusable_at(60_000));
+    assert!(!archive.reusable_at(200_000));
+    archive.captured_at_ms = Some(200_000);
+    assert!(archive.reusable_at(1_000_000));
+}
+
+#[test]
 fn boundary_rejects_invalid_samples_and_identity() {
+    assert!(!valid_time_range(i64::MIN, i64::MAX, 180_000));
+    assert!(valid_time_range(1000, 2000, 180_000));
     assert!(TelemetrySample {
         time_ms: 1,
         speed: Some(f64::NAN),

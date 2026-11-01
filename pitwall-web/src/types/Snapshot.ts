@@ -5,4 +5,4 @@ import type { DriverState } from "./DriverState";
 import type { Session } from "./Session";
 import type { Weather } from "./Weather";
 
-export type Snapshot = { session: Session, clock_ms: number, playing: boolean, speed: number, lap: number, track_status: string, data_status: string, weather: Weather, drivers: { [key in number]?: DriverState }, messages: Array<ControlMessage>, circuit: Circuit, revision: number, };
+export type Snapshot = { session: Session, clock_ms: number, playing: boolean, speed: number, lap: number, track_status: string, data_status: string, weather: Weather, drivers: { [key in number]?: DriverState }, messages: Array<ControlMessage>, circuit: Circuit, qualifying_phase: number | null, qualifying_start_ms: number | null, revision: number, };
