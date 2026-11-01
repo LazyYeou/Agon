@@ -22,8 +22,12 @@ use std::{
 };
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 mod connection;
+mod live;
+mod replay_window;
+pub use live::LiveRuntime;
 
 pub struct App {
+    pub live: tokio::sync::RwLock<Option<Arc<LiveRuntime>>>,
     pub source: OpenF1,
     pub store: Store,
     archives: AsyncMutex<HashMap<u32, Arc<SessionArchive>>>,
@@ -44,6 +48,7 @@ impl App {
     async fn with_store(store: Store) -> anyhow::Result<Arc<Self>> {
         let archive = Arc::new(pitwall_state::demo_archive());
         Ok(Arc::new(Self {
+            live: tokio::sync::RwLock::new(None),
             source: OpenF1::new()?,
             store,
             archives: AsyncMutex::new(HashMap::from([(0, archive)])),
@@ -56,14 +61,33 @@ impl App {
         }))
     }
     pub async fn archive(&self, key: u32) -> anyhow::Result<Arc<SessionArchive>> {
-        if let Some(a) = self.archives.lock().await.get(&key).cloned() {
+        if let Some(a) = self
+            .archives
+            .lock()
+            .await
+            .get(&key)
+            .filter(|a| a.reusable_at(chrono::Utc::now().timestamp_millis()))
+            .cloned()
+        {
             return Ok(a);
         }
         let _load = self.load.lock().await;
-        if let Some(a) = self.archives.lock().await.get(&key).cloned() {
+        if let Some(a) = self
+            .archives
+            .lock()
+            .await
+            .get(&key)
+            .filter(|a| a.reusable_at(chrono::Utc::now().timestamp_millis()))
+            .cloned()
+        {
             return Ok(a);
         }
-        let archive = if let Some(archive) = self.store.load(key).await? {
+        let archive = if let Some(archive) = self
+            .store
+            .load(key)
+            .await?
+            .filter(|a| a.reusable_at(chrono::Utc::now().timestamp_millis()))
+        {
             archive
         } else {
             let archive = self.source.load_archive(key).await?;
@@ -103,6 +127,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/session/{key}", get(session))
         .route("/api/telemetry", get(telemetry))
         .route("/api/strategy", get(strategy))
+        .route("/api/accuracy", get(accuracy))
         .route("/api/live", get(live_status))
         .route("/ws", get(websocket))
         .fallback_service(
@@ -111,7 +136,11 @@ pub fn router(app: Arc<App>) -> Router {
             ),
         )
         .layer(middleware::from_fn_with_state(app.clone(), limit))
-        .layer(tower_http::trace::TraceLayer::new_for_http())
+        .layer(
+            tower_http::trace::TraceLayer::new_for_http().make_span_with(
+                tower_http::trace::DefaultMakeSpan::new().level(tracing::Level::INFO),
+            ),
+        )
         .with_state(app)
 }
 async fn limit(
@@ -184,8 +213,43 @@ async fn telemetry(
     State(app): State<Arc<App>>,
     Query(q): Query<TelemetryQuery>,
 ) -> Result<Json<Vec<TelemetrySample>>, ApiError> {
-    if q.driver == 0 || q.driver > 999 || q.to <= q.from || q.to - q.from > 180_000 {
+    if q.driver == 0 || q.driver > 999 || !valid_time_range(q.from, q.to, 180_000) {
         return Err(bad("Choose a valid driver and a range up to 180 seconds"));
+    }
+    if let Some(live) = app
+        .live
+        .read()
+        .await
+        .clone()
+        .filter(|live| live.key == q.session)
+    {
+        let state = live.snapshot().await;
+        if !state.drivers.contains_key(&q.driver)
+            || q.from < state.session.start_ms
+            || q.to > state.session.end_ms
+        {
+            return Err(bad("Telemetry range or driver outside session"));
+        }
+        let retained = live.telemetry(q.driver).await;
+        let covers_range = retained
+            .first()
+            .is_some_and(|s| s.time_ms <= q.from.saturating_add(1000))
+            && retained
+                .last()
+                .is_some_and(|s| s.time_ms >= q.to.saturating_sub(1000));
+        let samples: Vec<_> = retained
+            .into_iter()
+            .filter(|s| s.time_ms >= q.from && s.time_ms <= q.to)
+            .collect();
+        if covers_range {
+            return Ok(Json(samples));
+        }
+        return app
+            .source
+            .telemetry(q.session, q.driver, q.from, q.to)
+            .await
+            .map(Json)
+            .map_err(source_error);
     }
     let a = app.archive(q.session).await.map_err(source_error)?;
     if !a.drivers.iter().any(|d| d.number == q.driver)
@@ -229,6 +293,21 @@ async fn strategy(
     if q.a == q.b {
         return Err(bad("Select two different drivers"));
     }
+    if let Some(live) = app
+        .live
+        .read()
+        .await
+        .clone()
+        .filter(|live| live.key == q.session)
+    {
+        let state = live.snapshot().await;
+        if state.clock_ms.abs_diff(q.time_ms) <= 5000 {
+            if ![q.a, q.b].iter().all(|n| state.drivers.contains_key(n)) {
+                return Err(bad("Driver not in session"));
+            }
+            return Ok(Json(pitwall_predict::undercut(&state, q.a, q.b)));
+        }
+    }
     let a = app.archive(q.session).await.map_err(source_error)?;
     if q.time_ms < a.session.start_ms || q.time_ms > a.session.end_ms {
         return Err(bad("Time outside session"));
@@ -255,9 +334,18 @@ async fn strategy(
     .map_err(|e| bad(e.to_string()))?;
     Ok(Json(result))
 }
-async fn live_status() -> Json<Value> {
+async fn accuracy() -> Json<Value> {
+    let path = PathBuf::from(std::env::var("AGON_MODELS").unwrap_or_else(|_| "models".into()))
+        .join("manifest.json");
+    let value = match tokio::fs::read(path).await {
+        Ok(bytes) => serde_json::from_slice::<Value>(&bytes).ok(),
+        Err(_) => None,
+    };
+    Json(value.map_or_else(||json!({"status":"unavailable","message":"No backtest report available. Playback scores accumulate from recorded forecasts."}),|v|json!({"status":"measured","model":v["model"],"years":v["training_years"],"pace_samples":v["pace_samples"],"pace_mae":v["pace_mae"],"pace_1_to_5_mae":v["pace_1_to_5_mae"],"pace_1_to_5_samples":v["pace_1_to_5_samples"],"band_coverage":v["band_coverage"],"pit_samples":v["pit_samples"],"pit_candidates":v["pit_candidates"],"pit_forecast_coverage":v["pit_forecast_coverage"],"pit_accuracy":v["pit_horizon_10_accuracy"],"position_accuracy":v["finish_half_distance_accuracy"],"limitations":v["limitations"]})))
+}
+async fn live_status(State(app): State<Arc<App>>) -> Json<Value> {
     Json(
-        json!({"configured":std::env::var("LIVE_SESSION_KEY").ok().and_then(|s|s.parse::<u32>().ok()),"message":"Live ingest requires sponsor credentials on the server. Feed delay is approximately 3 seconds."}),
+        json!({"configured":app.live.read().await.as_ref().map(|r|r.key),"message":"Live ingest requires sponsor credentials on the server. Feed delay is approximately 3 seconds."}),
     )
 }
 async fn websocket(
