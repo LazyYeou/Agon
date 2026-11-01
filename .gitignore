@@ -3,7 +3,7 @@
 /pitwall-web/node_modules/
 /pitwall-web/dist/
 /data/
-/models/
+/models/smoke/
 /.superpowers/
 /test-results/
 /playwright-report/
