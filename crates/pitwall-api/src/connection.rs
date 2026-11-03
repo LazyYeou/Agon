@@ -1,7 +1,7 @@
 use super::*;
 use crate::replay_window::{Channel, ReplayWindow};
 use axum::extract::ws::{Message, WebSocket};
-use pitwall_predict::{predict, PredictionLog};
+use pitwall_predict::{input_signature as signature, predict, PredictionLog};
 use std::sync::atomic::Ordering::Relaxed;
 
 struct Active {
@@ -68,18 +68,6 @@ pub fn diff(old: &Value, new: &Value) -> Option<Value> {
     } else {
         Some(new.clone())
     }
-}
-fn signature(s: &Snapshot) -> String {
-    format!(
-        "{}:{:?}:{}",
-        s.track_status,
-        s.weather,
-        s.drivers
-            .values()
-            .map(|d| format!("{}:{}:{}", d.lap, d.stints.len(), d.pits.len()))
-            .collect::<Vec<_>>()
-            .join(",")
-    )
 }
 pub async fn run(mut socket: WebSocket, app: Arc<App>, ip: IpAddr) {
     app.connections.fetch_add(1, Relaxed);

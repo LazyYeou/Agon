@@ -10,6 +10,48 @@ mod simulation;
 pub use model::ModelBundle;
 pub use score::*;
 
+/// Prediction inputs and eligibility boundaries, shared by live and replay scheduling.
+pub fn input_signature(s: &Snapshot) -> String {
+    format!(
+        "{:?}",
+        (
+            (
+                &s.session.key,
+                &s.session.total_laps,
+                s.lap,
+                &s.track_status,
+                &s.weather,
+                s.qualifying_phase,
+                s.qualifying_start_ms,
+                &s.circuit.pit_loss
+            ),
+            simulation::has_current_field(s),
+            s.drivers
+                .iter()
+                .map(|(number, d)| {
+                    (
+                        (number, d.lap, &d.laps, &d.stints, &d.pits, d.tyre_age),
+                        (
+                            d.position,
+                            d.position_time_ms,
+                            d.gap,
+                            d.interval,
+                            d.interval_time_ms,
+                            d.in_pit,
+                        ),
+                        d.interval_time_ms.is_some_and(|time| {
+                            (0..=30_000).contains(&s.clock_ms.saturating_sub(time))
+                        }),
+                        d.pits
+                            .iter()
+                            .any(|p| (0..=60_000).contains(&s.clock_ms.saturating_sub(p.time_ms))),
+                    )
+                })
+                .collect::<Vec<_>>()
+        )
+    )
+}
+
 fn band(value: f64, width: f64) -> Band {
     Band {
         value,

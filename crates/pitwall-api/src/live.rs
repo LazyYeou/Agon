@@ -1,22 +1,8 @@
 use super::*;
+use pitwall_predict::input_signature as prediction_signature;
 use pitwall_state::RaceState;
 use pitwall_store::{PublishedSnapshot, LIVE_BATCH_LIMIT};
 use tokio::sync::RwLock;
-
-fn prediction_signature(view: &Snapshot) -> String {
-    format!(
-        "{:?}",
-        (
-            &view.track_status,
-            &view.weather,
-            view.qualifying_phase,
-            view.drivers
-                .iter()
-                .map(|(number, d)| (number, d.lap, &d.laps, &d.stints, &d.pits, d.tyre_age))
-                .collect::<Vec<_>>()
-        )
-    )
-}
 
 pub struct LiveRuntime {
     pub key: u32,
