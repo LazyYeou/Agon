@@ -4,6 +4,7 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 mod analysis;
 mod model;
+mod risk;
 mod score;
 mod simulation;
 pub use model::ModelBundle;
@@ -163,6 +164,7 @@ pub fn predict(s: &Snapshot) -> Vec<Prediction> {
         return outputs;
     }
     model::apply_models(s, &mut outputs);
+    risk::apply(s, &mut outputs);
     for p in &mut outputs {
         if let Some(alert) = analysis::anomaly(s, &s.drivers[&p.driver]) {
             p.factors[2] = alert.clone();
