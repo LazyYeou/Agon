@@ -26,6 +26,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - run: cargo test -p pitwall-api --example backtest
       - run: cargo test -p pitwall-store -- --include-ignored --test-threads=1
         env:
           DATABASE_URL: postgres://agon:agon-local@127.0.0.1:54329/agon
@@ -38,6 +39,7 @@ jobs:
           export ONNXRUNTIME_DYLIB_PATH=$(python -c "import onnxruntime,pathlib; print(next((pathlib.Path(onnxruntime.__file__).parent/'capi').glob('libonnxruntime.so.*')))")
           export AGON_TEST_MODELS=$PWD/models
           cargo test -p pitwall-predict --test model -- --include-ignored
+          cargo test -p pitwall-predict --lib risk::tests::native_onnx_matches_python_and_rejects_invalid_features -- --include-ignored
       - run: python -m unittest discover -s training -v
       - run: npm test && npm run build
       - run: git diff --exit-code -- pitwall-web/src/types crates/pitwall-core/bindings

@@ -60,7 +60,10 @@ fn rust_onnx_matches_python_exported_reference() {
     }
     let actual = model.hazards(&batch).unwrap();
     assert_eq!(actual.len(), expected.len());
-    assert!(actual.iter().zip(expected).all(|(a, b)| (a - b).abs() < 1e-6));
+    assert!(actual
+        .iter()
+        .zip(expected)
+        .all(|(a, b)| (a - b).abs() < 1e-6));
     assert!(model.hazards(&[]).is_err());
     assert!(model.hazards(&[1.0, 2.0]).is_err());
 }
