@@ -82,7 +82,7 @@ impl App {
         {
             return Ok(a);
         }
-        let archive = if let Some(archive) = self
+        let mut archive = if let Some(archive) = self
             .store
             .load(key)
             .await?
@@ -94,6 +94,7 @@ impl App {
             self.store.save(&archive).await?;
             archive
         };
+        pitwall_ingest::metadata::apply_metadata(&mut archive.session, &mut archive.circuit)?;
         let a = Arc::new(archive);
         let mut archives = self.archives.lock().await;
         if archives.len() >= 8 {

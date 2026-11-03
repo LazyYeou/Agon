@@ -12,6 +12,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 COPY migrations migrations
+COPY metadata metadata
 RUN cargo build --locked --release -p pitwall-api
 
 FROM python:3.13-slim-bookworm AS inference

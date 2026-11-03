@@ -4,8 +4,10 @@ use pitwall_core::*;
 use serde_json::Value;
 use std::{future::Future, pin::Pin};
 mod live;
+pub mod metadata;
 mod openf1;
 pub use live::{LiveArrival, LiveFeed};
+pub use openf1::session as session_from_openf1;
 pub use openf1::{attach_locations, openf1_url, OpenF1};
 pub fn decode_rows(status: u16, body: &[u8]) -> Result<Vec<Value>> {
     if status == 404 {

@@ -219,8 +219,12 @@ impl LiveRuntime {
         app.store.save_live_bootstrap(&archive).await?;
         let runtime = Arc::new(Self::new(archive.clone()));
         let mut watermark = 0;
-        if let Some((snapshot, saved_watermark)) = app.store.load_live_checkpoint(key).await? {
+        if let Some((mut snapshot, saved_watermark)) = app.store.load_live_checkpoint(key).await? {
             if snapshot.session.key == key {
+                pitwall_ingest::metadata::apply_metadata(
+                    &mut snapshot.session,
+                    &mut snapshot.circuit,
+                )?;
                 let mut state = runtime.state.write().await;
                 *state = RaceState::restore(snapshot);
                 state.view_mut().data_status = "data delayed".into();
