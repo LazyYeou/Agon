@@ -171,6 +171,36 @@ pub struct PitWindow {
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export, export_to = "../../../pitwall-web/src/types/")]
+pub struct RiskForecast {
+    pub probability: f64,
+    pub horizon_laps: u32,
+    pub model: String,
+    pub label: String,
+    pub factors: Vec<String>,
+}
+impl RiskForecast {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.probability.is_finite()
+            && (0.0..=1.0).contains(&self.probability)
+            && (1..=30).contains(&self.horizon_laps)
+            && !self.model.is_empty()
+        {
+            Ok(())
+        } else {
+            Err("Invalid risk forecast")
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export, export_to = "../../../pitwall-web/src/types/")]
+pub struct OvertakeForecast {
+    pub target: u32,
+    pub forecast: RiskForecast,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export, export_to = "../../../pitwall-web/src/types/")]
 pub struct Prediction {
     pub driver: u32,
     pub lap: u32,
@@ -186,6 +216,10 @@ pub struct Prediction {
     pub finish: Vec<(u32, f64)>,
     pub rejoin: Option<Band>,
     pub qualifying_need: Option<Band>,
+    #[serde(default)]
+    pub safety_car: Option<RiskForecast>,
+    #[serde(default)]
+    pub overtake: Option<OvertakeForecast>,
     pub factors: Vec<String>,
     pub insight: String,
 }
@@ -195,9 +229,15 @@ pub struct Prediction {
 pub struct DriverState {
     pub driver: Driver,
     pub position: Option<u32>,
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub position_time_ms: Option<i64>,
     pub start_position: Option<u32>,
     pub gap: Option<f64>,
     pub interval: Option<f64>,
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub interval_time_ms: Option<i64>,
     pub lap: u32,
     pub laps: Vec<Lap>,
     pub partial_lap: Option<Lap>,
@@ -382,4 +422,28 @@ pub struct AccuracyReport {
     pub pit_accuracy: Option<f64>,
     pub position_samples: usize,
     pub position_accuracy: Option<f64>,
+}
+
+#[cfg(test)]
+mod risk_tests {
+    use super::*;
+
+    #[test]
+    fn risk_forecasts_reject_invalid_probabilities_and_horizons() {
+        let mut forecast = RiskForecast {
+            probability: 0.2,
+            horizon_laps: 5,
+            model: "test-v1".into(),
+            label: "Experimental model".into(),
+            factors: vec![],
+        };
+        assert!(forecast.validate().is_ok());
+        for probability in [-0.1, 1.1, f64::NAN] {
+            forecast.probability = probability;
+            assert!(forecast.validate().is_err());
+        }
+        forecast.probability = 0.2;
+        forecast.horizon_laps = 0;
+        assert!(forecast.validate().is_err());
+    }
 }

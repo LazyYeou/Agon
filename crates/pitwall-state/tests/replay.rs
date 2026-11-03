@@ -3,6 +3,26 @@ use pitwall_state::*;
 use std::sync::Arc;
 
 #[test]
+fn driver_freshness_tracks_source_time_and_rejects_older_updates() {
+    let a = demo_archive();
+    let mut state = RaceState::new(a.session, a.drivers, a.circuit);
+    for (source, received, position) in [(1000, 2000, 2), (900, 3000, 3)] {
+        state.apply(RaceEvent {
+            source_time_ms: Some(source), time_ms: received, driver: Some(1),
+            payload: EventData::Position(position),
+        });
+        state.apply(RaceEvent {
+            source_time_ms: Some(source), time_ms: received, driver: Some(1),
+            payload: EventData::Interval { gap: Some(2.0), interval: Some(1.0) },
+        });
+    }
+    let driver = &state.view().drivers[&1];
+    assert_eq!(driver.position, Some(2));
+    assert_eq!(driver.position_time_ms, Some(1000));
+    assert_eq!(driver.interval_time_ms, Some(1000));
+}
+
+#[test]
 fn qualifying_phase_uses_distinct_source_session_starts() {
     let mut a = demo_archive();
     a.session.name = "Qualifying".into();

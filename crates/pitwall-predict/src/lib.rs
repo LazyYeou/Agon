@@ -152,6 +152,8 @@ pub fn predict(s: &Snapshot) -> Vec<Prediction> {
                 finish: vec![],
                 rejoin: None,
                 qualifying_need: None,
+                safety_car: None,
+                overtake: None,
                 factors,
                 insight,
             }
