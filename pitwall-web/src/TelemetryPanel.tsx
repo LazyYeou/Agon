@@ -3,6 +3,7 @@ import type { Snapshot } from "./types/Snapshot";
 import type { DriverState } from "./types/DriverState";
 import type { TelemetrySample } from "./types/TelemetrySample";
 import Modal from "./Modal";
+import RaceRisks from "./RaceRisks";
 import type { ChartOption } from "./EChart";
 import { distanceTrace, mapBounds, tracePoint, miniSectors } from "./analysis";
 import { fetchLapTelemetry } from "./telemetry";
@@ -342,6 +343,7 @@ export default function TelemetryPanel({
         P{d.position ?? "—"} · Gap ahead {num(d.interval)} s ·{" "}
         {p?.insight ?? "Complete clean laps for a plain-language insight."}
       </p>
+      {(/race|sprint/i).test(state.session.name) && <RaceRisks prediction={p} drivers={state.drivers} />}
       <div className="panel-heading">
         <h3>Lap telemetry</h3>
         <span className="pill">Approximate telemetry</span>

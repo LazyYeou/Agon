@@ -3,6 +3,7 @@ import { useTiming } from "./stream";
 import TimingTower from "./TimingTower";
 import TrackMap from "./TrackMap";
 import Modal from "./Modal";
+import RaceRisks from "./RaceRisks";
 import type { Session } from "./types/Session";
 import type { DriverState } from "./types/DriverState";
 import {
@@ -284,6 +285,11 @@ export default function App() {
                   </span>
                 </>
               )}
+              {(/race|sprint/i).test(state.session.name) && <span>
+                {leader?.prediction?.safety_car
+                  ? `New SC/VSC: ${num(leader.prediction.safety_car.probability * 100, 1)}% within ${leader.prediction.safety_car.horizon_laps} laps · experimental`
+                  : "SC/VSC probability unavailable"}
+              </span>}
             </p>
             <span className="model-tag">
               {state.track_status === "RED"
@@ -681,6 +687,7 @@ export default function App() {
                 {prediction.label} · {prediction.status}
               </p>
               <p>{prediction.insight}</p>
+              {state && (/race|sprint/i).test(state.session.name) && <RaceRisks prediction={prediction} drivers={state.drivers} />}
               <ol>
                 {prediction.factors.map((factor, i) => (
                   <li key={i}>{factor}</li>
