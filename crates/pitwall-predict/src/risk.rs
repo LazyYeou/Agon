@@ -163,7 +163,9 @@ fn race_features(s: &Snapshot, prior: f64) -> Option<[f32; 3]> {
         || s.lap == 0
         || !prior.is_finite()
         || !(0.0..=1.0).contains(&prior)
-        || s.session.total_laps.is_none_or(|total| s.lap.saturating_add(5) > total)
+        || s.session
+            .total_laps
+            .is_none_or(|total| s.lap.saturating_add(5) > total)
     {
         return None;
     }
@@ -394,13 +396,15 @@ mod tests {
         s.session.synthetic = true;
         assert!(race_features(&s, 0.1).is_none());
         s.session.synthetic = false;
-        let mut d = DriverState::default();
-        d.lap = 4;
-        d.position = Some(2);
-        d.position_time_ms = Some(1);
-        d.interval = Some(0.8);
-        d.interval_time_ms = Some(69_999);
-        d.tyre_age = Some(4);
+        let mut d = DriverState {
+            lap: 4,
+            position: Some(2),
+            position_time_ms: Some(1),
+            interval: Some(0.8),
+            interval_time_ms: Some(69_999),
+            tyre_age: Some(4),
+            ..Default::default()
+        };
         d.stints.push(Stint {
             compound: "MEDIUM".into(),
             ..Default::default()

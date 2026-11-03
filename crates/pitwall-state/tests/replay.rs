@@ -8,12 +8,19 @@ fn driver_freshness_tracks_source_time_and_rejects_older_updates() {
     let mut state = RaceState::new(a.session, a.drivers, a.circuit);
     for (source, received, position) in [(1000, 2000, 2), (900, 3000, 3)] {
         state.apply(RaceEvent {
-            source_time_ms: Some(source), time_ms: received, driver: Some(1),
+            source_time_ms: Some(source),
+            time_ms: received,
+            driver: Some(1),
             payload: EventData::Position(position),
         });
         state.apply(RaceEvent {
-            source_time_ms: Some(source), time_ms: received, driver: Some(1),
-            payload: EventData::Interval { gap: Some(2.0), interval: Some(1.0) },
+            source_time_ms: Some(source),
+            time_ms: received,
+            driver: Some(1),
+            payload: EventData::Interval {
+                gap: Some(2.0),
+                interval: Some(1.0),
+            },
         });
     }
     let driver = &state.view().drivers[&1];

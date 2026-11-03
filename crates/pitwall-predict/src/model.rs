@@ -101,10 +101,20 @@ impl ModelBundle {
             Tensor::from_array(([rows, FEATURES.len()], features.to_vec().into_boxed_slice()))?;
         let result = self.pit.run(ort::inputs![input])?;
         let (_, values) = result["probabilities"].try_extract_tensor::<f32>()?;
-        ensure!(values.len() == rows * 2, "Hazard probability shape mismatch");
-        let probabilities: Vec<_> = values.chunks_exact(2).map(|row| row[1] as f64).collect();
         ensure!(
-            probabilities.iter().all(|p| p.is_finite() && (0.0..=1.0).contains(p)),
+            values.len() == rows * 2,
+            "Hazard probability shape mismatch"
+        );
+        let probabilities: Vec<_> = values
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|row| row[1] as f64)
+            .collect();
+        ensure!(
+            probabilities
+                .iter()
+                .all(|p| p.is_finite() && (0.0..=1.0).contains(p)),
             "Invalid hazard probability"
         );
         Ok(probabilities)
