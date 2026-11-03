@@ -12,6 +12,17 @@ def forecast(kind='overtake', minute=2, lap=1, **changes):
 
 
 class ReplayRiskScoreTest(unittest.TestCase):
+    def test_submillisecond_sources_use_the_rust_issue_clock(self):
+        a = archive()
+        for lap in a['laps']:
+            lap['date_start'] = lap['date_start'].replace('00Z', '00.000600Z')
+        for topic in ('race_control', 'weather'):
+            a[topic][0]['date'] = '2023-01-01T00:02:00.000600Z'
+        for topic in ('position', 'intervals'):
+            for row in a[topic]:
+                row['date'] = row['date'].replace('00Z', '00.000600Z')
+        self.assertEqual(RaceLabels(a).outcome(forecast()), (1, None))
+
     def test_pass_before_issue_is_not_future_success(self):
         a = archive()
         a['position'] += [dict(driver_number=d, position=d, date='2023-01-01T00:09:30Z') for d in (1, 2)]

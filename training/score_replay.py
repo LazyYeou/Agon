@@ -5,11 +5,12 @@ forecasts; it does not measure how often the runtime issued a forecast.
 """
 import argparse
 from collections import Counter, defaultdict
+from datetime import datetime, timezone
 import json
 import math
 from pathlib import Path
-from pipeline import COMPOUNDS, stamp, track_status
-from risk import HORIZON, latest, timeline
+from pipeline import COMPOUNDS, track_status
+from risk import HORIZON, latest
 
 KINDS = ('sc', 'overtake')
 
@@ -18,11 +19,27 @@ def number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
+def source_ms(value):
+    try:
+        date = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if date.tzinfo is None: return None
+        delta = date.astimezone(timezone.utc) - datetime(1970, 1, 1, tzinfo=timezone.utc)
+        return (delta.days * 86400 + delta.seconds) * 1000 + delta.microseconds // 1000
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return None
+
+
+def source_timeline(rows):
+    values = sorted((date, i, row) for i, row in enumerate(rows)
+                    if (date := source_ms(row.get('date'))) is not None)
+    return [date for date, _, _ in values], [row for _, _, row in values]
+
+
 class RaceLabels:
     def __init__(self, archive):
         self.archive = archive
-        self.controls = timeline(archive['race_control'])
-        self.weather = timeline(archive['weather'])
+        self.controls = source_timeline(archive['race_control'])
+        self.weather = source_timeline(archive['weather'])
         states = []; status = 'UNKNOWN'; self.deployments = []
         for date, row in zip(*self.controls):
             status = track_status(row, status); states.append({'status': status})
@@ -30,15 +47,17 @@ class RaceLabels:
         self.statuses = self.controls[0], states
         self.laps = defaultdict(dict); self.leader = {}
         for lap in archive['laps']:
-            start = stamp(lap.get('date_start')); duration = lap.get('lap_duration')
+            start = source_ms(lap.get('date_start')); duration = lap.get('lap_duration')
             if start is None or not number(duration) or duration <= 0: continue
-            # Match the Rust normaliser's millisecond completion clock.
-            end = round((start + duration) * 1000) / 1000
+            # Rust truncates the source timestamp and rounds the positive duration separately.
+            milliseconds = duration * 1000
+            whole = math.floor(milliseconds)
+            end = start + whole + int(milliseconds - whole >= .5)
             d = lap['driver_number']; n = lap['lap_number']
             self.laps[d][n] = (end, lap)
             self.leader[n] = min(self.leader.get(n, math.inf), end)
-        self.positions = {d: timeline([r for r in archive.get('position', []) if r['driver_number'] == d]) for d in self.laps}
-        self.intervals = {d: timeline([r for r in archive.get('intervals', []) if r['driver_number'] == d]) for d in self.laps}
+        self.positions = {d: source_timeline([r for r in archive.get('position', []) if r['driver_number'] == d]) for d in self.laps}
+        self.intervals = {d: source_timeline([r for r in archive.get('intervals', []) if r['driver_number'] == d]) for d in self.laps}
 
     def status(self, time):
         row = latest(self.statuses, time)
@@ -50,7 +69,7 @@ class RaceLabels:
         if not number(probability) or not 0 <= probability <= 1: return None, 'invalid_probability'
         if not isinstance(n, int) or isinstance(n, bool) or n <= 0: return None, 'invalid_lap'
         if not isinstance(clock, int) or isinstance(clock, bool) or clock <= 0: return None, 'invalid_clock'
-        time = clock / 1000
+        time = clock
         if self.archive['session'].get('session_name', 'Race') not in ('Race', 'Sprint'): return None, 'non_race'
         if not self.leader or time > max(self.leader.values()): return None, 'invalid_clock'
         if self.status(time) != 'GREEN': return None, 'non_green_issue'
@@ -82,12 +101,12 @@ class RaceLabels:
         if any(self.status(date) != 'GREEN' for date in self.controls[0] if time < date <= end): return None, 'neutralised_horizon'
         for pit in self.archive['pit']:
             if pit['driver_number'] not in (driver, target): continue
-            date = stamp(pit.get('date'))
-            if date is None or time - 60 <= date <= end + 60 or n <= pit.get('lap_number', -1) <= max(n + HORIZON, target_last): return None, 'pit_horizon'
+            date = source_ms(pit.get('date'))
+            if date is None or time - 60_000 <= date <= end + 60_000 or n <= pit.get('lap_number', -1) <= max(n + HORIZON, target_last): return None, 'pit_horizon'
         if history[n][1].get('is_pit_out_lap') or any(lap.get('is_pit_out_lap') for d in (driver, target) for finish, lap in self.laps[d].values() if time < finish <= end): return None, 'pit_out_horizon'
         interval = latest(self.intervals[driver], time)
         gap = interval.get('interval') if interval else None
-        if interval is None or time - stamp(interval['date']) > 30 or not number(gap) or not 0 < gap <= 10: return None, 'missing_fresh_interval'
+        if interval is None or time - source_ms(interval['date']) > 30_000 or not number(gap) or not 0 < gap <= 10: return None, 'missing_fresh_interval'
         for d in (driver, target):
             stints = [s for s in self.archive['stints'] if s['driver_number'] == d and s['lap_start'] <= n]
             if not stints or max(stints, key=lambda s: s['lap_start']).get('compound') not in COMPOUNDS: return None, 'missing_compound'
