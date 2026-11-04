@@ -187,12 +187,16 @@ impl OpenF1 {
         if !(2023..=2100).contains(&year) {
             bail!("Year must be 2023 or later");
         }
-        Ok(self
+        let mut sessions: Vec<_> = self
             .query("sessions", &[("year", year.to_string())])
             .await?
             .iter()
             .filter_map(session)
-            .collect())
+            .collect();
+        for session in &mut sessions {
+            metadata::apply_metadata(session, &mut Circuit::default())?;
+        }
+        Ok(sessions)
     }
     pub async fn telemetry(
         &self,
@@ -286,7 +290,7 @@ impl OpenF1 {
         }
         let params = [("session_key", key.to_string())];
         let sessions = self.query("sessions", &params).await?;
-        let session = sessions
+        let mut session = sessions
             .first()
             .and_then(session)
             .context("Session not found")?;
@@ -403,6 +407,7 @@ impl OpenF1 {
             }
         }
         events.sort_by_key(|e| e.time_ms);
+        metadata::apply_metadata(&mut session, &mut circuit)?;
         Ok(SessionArchive {
             captured_at_ms: Some(chrono::Utc::now().timestamp_millis()),
             session,

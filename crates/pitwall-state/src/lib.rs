@@ -282,9 +282,11 @@ impl RaceState {
                         d.interval = None;
                     }
                     d.position = Some(position);
+                    d.position_time_ms = Some(ordering_time);
                     d.start_position.get_or_insert(position);
                 }
                 EventData::Interval { gap, interval } => {
+                    d.interval_time_ms = Some(ordering_time);
                     d.gap = if d.position == Some(1) {
                         Some(0.0)
                     } else {

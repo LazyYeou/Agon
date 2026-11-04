@@ -49,4 +49,21 @@ fn rust_onnx_matches_python_exported_reference() {
     );
     let p = model.hazard(&features).unwrap();
     assert!((0.0..=1.0).contains(&p));
+    let mut batch = Vec::new();
+    let mut expected = Vec::new();
+    for h in 0..30 {
+        let mut row = features.clone();
+        row[1] += h as f32;
+        row[5] += h as f32;
+        expected.push(model.hazard(&row).unwrap());
+        batch.extend(row);
+    }
+    let actual = model.hazards(&batch).unwrap();
+    assert_eq!(actual.len(), expected.len());
+    assert!(actual
+        .iter()
+        .zip(expected)
+        .all(|(a, b)| (a - b).abs() < 1e-6));
+    assert!(model.hazards(&[]).is_err());
+    assert!(model.hazards(&[1.0, 2.0]).is_err());
 }

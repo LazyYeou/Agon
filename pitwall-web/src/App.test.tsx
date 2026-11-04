@@ -26,8 +26,8 @@ it("labels live versus delayed source data and disables replay commands in both 
 it("distinguishes trained forecasts from basic estimates without hiding failed targets", () => {
   timing.state = state();
   timing.state.drivers[1] = { driver: { number: 1, name: "Test Driver", code: "AAA", team: "Test", color: "ff0000" },
-    position: 1, start_position: 1, gap: 0, interval: 0, lap: 1, laps: [], stints: [], pits: [], in_pit: false,
-    telemetry: null, location: null, partial_lap: null, tyre_age: null, prediction: { driver: 1, lap: 1, model: "race-v2", label: "model estimate · backtest below target", status: "model estimate", confidence: .8, pace: [], degradation: null, laps_to_cliff: null, tyre_health: null, pit_window: null, finish: [], rejoin: null, qualifying_need: null, factors: [], insight: "Test" } };
+    position: 1, position_time_ms: 0, start_position: 1, gap: 0, interval: 0, interval_time_ms: 0, lap: 1, laps: [], stints: [], pits: [], in_pit: false,
+    telemetry: null, location: null, partial_lap: null, tyre_age: null, prediction: { driver: 1, lap: 1, model: "race-v2", label: "model estimate · backtest below target", status: "model estimate", confidence: .8, pace: [], degradation: null, laps_to_cliff: null, tyre_health: null, pit_window: null, finish: [], rejoin: null, qualifying_need: null, safety_car: null, overtake: null, factors: [], insight: "Test" } };
   expect(renderToStaticMarkup(<App />)).toContain("Trained model · below target");
   for (const model of ["basic-v1", "basic-bayesian-v2"]) {
     timing.state.drivers[1]!.prediction!.model = model;

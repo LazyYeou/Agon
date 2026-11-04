@@ -1,6 +1,19 @@
 {
-  "verified_at": "2026-11-01",
+  "verified_at": "2026-11-03",
   "historical_complete": false,
-  "circuits": [],
-  "notes": "Historical outlines derived from session location are approximate. Licensed corner/sector/DRS/pit-lane datasets with configuration-year coverage have not yet been established. Synthetic metadata is not historical coverage."
+  "manifest": "verified.json",
+  "circuits": [
+    {
+      "circuit": "Singapore",
+      "year": 2023,
+      "session_key": 9165,
+      "configuration": "Marina Bay 2023 revised 19-turn layout",
+      "scheduled_laps": 62,
+      "geometry": false,
+      "pit_loss": false,
+      "source": "https://www.mercedesamgf1.com/news/explained-the-singapore-grand-prix-circuit-changes",
+      "published": "2023-09-12"
+    }
+  ],
+  "notes": "One independently recorded factual pre-race schedule is bundled, not source article text or geometry. All other schedules remain unknown. Historical outlines derived from session location are approximate. Licensed corner/sector/DRS/pit-lane datasets with configuration-year coverage and prior-session pit-loss calibration remain unavailable. Synthetic metadata is not historical coverage."
 }

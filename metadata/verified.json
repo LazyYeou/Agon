@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "session_key": 9165,
+      "year": 2023,
+      "circuit": "Singapore",
+      "session_name": "Race",
+      "start_ms": 1694952000000,
+      "configuration": "Marina Bay 2023 revised 19-turn layout",
+      "schedule": {
+        "total_laps": 62,
+        "provenance": {
+          "source": "https://www.mercedesamgf1.com/news/explained-the-singapore-grand-prix-circuit-changes",
+          "licence": "Independently recorded factual lap count; source article rights reserved, no article text or geometry redistributed",
+          "known_at_ms": 1694563199999
+        }
+      }
+    }
+  ]
+}

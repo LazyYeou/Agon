@@ -1,0 +1,413 @@
+{
+  "schema": "agon-risk-v1",
+  "model": "openf1-calibrated-logistic-risk-v1-fe39d3c3754071eb",
+  "horizon_laps": 5,
+  "source": "OpenF1 historical timing/race control; non-commercial educational use",
+  "train_races": [
+    7779,
+    7787,
+    7953,
+    9070,
+    9078,
+    9094,
+    9102,
+    9110,
+    9118,
+    9126,
+    9133,
+    9141,
+    9149,
+    9157,
+    9165,
+    9173,
+    9181,
+    9189,
+    9197,
+    9205,
+    9213,
+    9221,
+    9472,
+    9480,
+    9488,
+    9496,
+    9507,
+    9515,
+    9523,
+    9531,
+    9539,
+    9550,
+    9558,
+    9566,
+    9574,
+    9582,
+    9590,
+    9598,
+    9606,
+    9617,
+    9625,
+    9636
+  ],
+  "calibration_races": [
+    9644,
+    9655,
+    9662,
+    9673,
+    9693,
+    9839,
+    9850,
+    9858,
+    9869,
+    9877,
+    9888,
+    9896,
+    9904,
+    9912
+  ],
+  "holdout_races": [
+    9920,
+    9928,
+    9939,
+    9947,
+    9955,
+    9963,
+    9971,
+    9979,
+    9987,
+    9998,
+    10006,
+    10014,
+    10022,
+    10033
+  ],
+  "feature_assumptions": {
+    "circuit_prior": "Training races only; each training row uses a leave-one-race-out, 20-observation pooled-rate shrinkage prior. Calibration/holdout/runtime use all training races only. Unknown circuits withhold.",
+    "freshness": "Latest weather at issue; position is event-driven and persists. Both position timestamps must exist and be nonfuture; current numeric interval requires age <=30 seconds. Same completed lap, gap >0 and <=10 seconds.",
+    "omissions": "No DRS, relative pace trend, telemetry, incident severity or race-distance feature. Archives are Grand Prix races; sprint probability calibration has not been measured.",
+    "coverage": "Holdout scored windows / all holdout leader laps (SC) or driver completed laps (pass), including censored/incomplete/missing-input/unknown-circuit windows in denominator."
+  },
+  "label_assumptions": {
+    "safety_car": "New SC or VSC deployment within next five leader-completed laps; green issue only; observed complete horizon.",
+    "overtake": "Observed relative-position reversal of current same-lap adjacent opponent within next five driver laps. Both cars must finish horizon; censor pits, pit-out laps, retirements, missing laps and neutralisations. Position-feed resolution and administrative corrections limit physical-pass identification; not an exact overtake ground truth."
+  },
+  "models": {
+    "safety_car": {
+      "file": "risk_sc.onnx",
+      "sha256": "9a5e1781c9096043407eb16c39f0f86a46372c1b61f70176f662666f608c03c3",
+      "features": [
+        "lap",
+        "rain",
+        "circuit_prior"
+      ],
+      "circuit_priors": {
+        "Jeddah": 0.10586584479691298,
+        "Melbourne": 0.1768481629039398,
+        "Sakhir": 0.05058357356481931,
+        "Baku": 0.0656525413497525,
+        "Miami": 0.09351482957060647,
+        "Monte Carlo": 0.00740472453619864,
+        "Catalunya": 0.008604081327273068,
+        "Montreal": 0.146534634409223,
+        "Spielberg": 0.07582283478697822,
+        "Silverstone": 0.057080546316264,
+        "Hungaroring": 0.008145196989818504,
+        "Spa-Francorchamps": 0.0124671382497222,
+        "Zandvoort": 0.07582283478697822,
+        "Monza": 0.010717364460287504,
+        "Singapore": 0.08566243930131891,
+        "Suzuka": 0.05555160311136407,
+        "Mexico City": 0.07049503136877777,
+        "Las Vegas": 0.12240304319445382,
+        "Yas Marina Circuit": 0.01673670614346268,
+        "Interlagos": 0.0866792875778211,
+        "Austin": 0.026848162903939796,
+        "Lusail": 0.017706949977866312,
+        "Imola": 0.015663840365035583
+      },
+      "train_samples": 2259,
+      "train_positives": 138,
+      "calibration_samples": 645,
+      "calibration_positives": 38,
+      "holdout_samples": 667,
+      "holdout_positives": 60,
+      "holdout_negatives": 607,
+      "holdout_candidates": 834,
+      "coverage": 0.7997601918465228,
+      "brier": 0.08309575915336609,
+      "constant_brier": 0.08269636497550445,
+      "observed_rate": 0.08995502248875563,
+      "mean_probability": 0.055905092507600784,
+      "reliability_bins": [
+        {
+          "count": 663,
+          "probability": 0.055168334394693375,
+          "frequency": 0.08446455505279035
+        },
+        {
+          "count": 4,
+          "probability": 0.17802147567272186,
+          "frequency": 1.0
+        }
+      ],
+      "onnx_max_probability_error": 9.313225746154785e-08,
+      "parity": [
+        {
+          "features": [
+            1.0,
+            0.0,
+            0.05555160343647003
+          ],
+          "probability": 0.09181764721870422
+        },
+        {
+          "features": [
+            2.0,
+            0.0,
+            0.05555160343647003
+          ],
+          "probability": 0.09010177850723267
+        },
+        {
+          "features": [
+            3.0,
+            0.0,
+            0.05555160343647003
+          ],
+          "probability": 0.08841484785079956
+        },
+        {
+          "features": [
+            4.0,
+            0.0,
+            0.05555160343647003
+          ],
+          "probability": 0.08675655722618103
+        },
+        {
+          "features": [
+            5.0,
+            0.0,
+            0.05555160343647003
+          ],
+          "probability": 0.0851263701915741
+        },
+        {
+          "features": [
+            6.0,
+            0.0,
+            0.05555160343647003
+          ],
+          "probability": 0.08352401852607727
+        },
+        {
+          "features": [
+            7.0,
+            0.0,
+            0.05555160343647003
+          ],
+          "probability": 0.08194917440414429
+        },
+        {
+          "features": [
+            8.0,
+            0.0,
+            0.05555160343647003
+          ],
+          "probability": 0.08040142059326172
+        }
+      ]
+    },
+    "overtake": {
+      "file": "risk_overtake.onnx",
+      "sha256": "ec901d7fdcfcad18db270267bc74a708323a4dd287bb7f867169e7572e632de1",
+      "features": [
+        "lap",
+        "rain",
+        "circuit_prior",
+        "interval",
+        "tyre_age_delta",
+        "compound_delta"
+      ],
+      "circuit_priors": {
+        "Jeddah": 0.15366979583787002,
+        "Melbourne": 0.11469824048840714,
+        "Sakhir": 0.15523615861478696,
+        "Baku": 0.12145602635362691,
+        "Miami": 0.181535812039117,
+        "Monte Carlo": 0.03830469938822959,
+        "Catalunya": 0.16316287811829683,
+        "Montreal": 0.12162959849038844,
+        "Spielberg": 0.11409994490795063,
+        "Silverstone": 0.141818353318921,
+        "Hungaroring": 0.07080640756650368,
+        "Spa-Francorchamps": 0.1645165586014929,
+        "Zandvoort": 0.15922176245234015,
+        "Monza": 0.14717177362920722,
+        "Singapore": 0.11401250660325617,
+        "Suzuka": 0.16695825518845592,
+        "Mexico City": 0.14144526388732956,
+        "Las Vegas": 0.3028600804131643,
+        "Yas Marina Circuit": 0.19357101815692707,
+        "Interlagos": 0.11710935001615243,
+        "Austin": 0.157427724730754,
+        "Lusail": 0.1677218589848427,
+        "Imola": 0.08175805565271509
+      },
+      "train_samples": 21758,
+      "train_positives": 2892,
+      "calibration_samples": 6234,
+      "calibration_positives": 788,
+      "holdout_samples": 6450,
+      "holdout_positives": 695,
+      "holdout_negatives": 5755,
+      "holdout_candidates": 15417,
+      "coverage": 0.4183693325549718,
+      "brier": 0.07695727795362473,
+      "constant_brier": 0.09677471948710746,
+      "observed_rate": 0.10775193798449613,
+      "mean_probability": 0.12566639482975006,
+      "reliability_bins": [
+        {
+          "count": 3455,
+          "probability": 0.03390070050954819,
+          "frequency": 0.022286541244573084
+        },
+        {
+          "count": 1985,
+          "probability": 0.14264413714408875,
+          "frequency": 0.11133501259445844
+        },
+        {
+          "count": 393,
+          "probability": 0.2359054982662201,
+          "frequency": 0.32061068702290074
+        },
+        {
+          "count": 226,
+          "probability": 0.34883251786231995,
+          "frequency": 0.26548672566371684
+        },
+        {
+          "count": 125,
+          "probability": 0.4373433291912079,
+          "frequency": 0.328
+        },
+        {
+          "count": 71,
+          "probability": 0.5495211482048035,
+          "frequency": 0.5774647887323944
+        },
+        {
+          "count": 74,
+          "probability": 0.6480922698974609,
+          "frequency": 0.6351351351351351
+        },
+        {
+          "count": 67,
+          "probability": 0.7552433013916016,
+          "frequency": 0.6417910447761194
+        },
+        {
+          "count": 40,
+          "probability": 0.828438937664032,
+          "frequency": 0.625
+        },
+        {
+          "count": 14,
+          "probability": 0.953151524066925,
+          "frequency": 1.0
+        }
+      ],
+      "onnx_max_probability_error": 1.7881393432617188e-07,
+      "parity": [
+        {
+          "features": [
+            1.0,
+            0.0,
+            0.1669582575559616,
+            1.0360000133514404,
+            0.0,
+            0.0
+          ],
+          "probability": 0.12907621264457703
+        },
+        {
+          "features": [
+            2.0,
+            0.0,
+            0.1669582575559616,
+            1.0399999618530273,
+            0.0,
+            0.0
+          ],
+          "probability": 0.1292436420917511
+        },
+        {
+          "features": [
+            3.0,
+            0.0,
+            0.1669582575559616,
+            1.190000057220459,
+            0.0,
+            0.0
+          ],
+          "probability": 0.11717495322227478
+        },
+        {
+          "features": [
+            4.0,
+            0.0,
+            0.1669582575559616,
+            1.284000039100647,
+            0.0,
+            0.0
+          ],
+          "probability": 0.11028793454170227
+        },
+        {
+          "features": [
+            5.0,
+            0.0,
+            0.1669582575559616,
+            1.4550000429153442,
+            0.0,
+            0.0
+          ],
+          "probability": 0.09833225607872009
+        },
+        {
+          "features": [
+            6.0,
+            0.0,
+            0.1669582575559616,
+            1.7450000047683716,
+            0.0,
+            0.0
+          ],
+          "probability": 0.08044475317001343
+        },
+        {
+          "features": [
+            7.0,
+            0.0,
+            0.1669582575559616,
+            2.0390000343322754,
+            0.0,
+            0.0
+          ],
+          "probability": 0.06538453698158264
+        },
+        {
+          "features": [
+            8.0,
+            0.0,
+            0.1669582575559616,
+            2.0910000801086426,
+            0.0,
+            0.0
+          ],
+          "probability": 0.06323325634002686
+        }
+      ]
+    }
+  }
+}

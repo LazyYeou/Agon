@@ -8,6 +8,39 @@ fn race() -> pitwall_core::Snapshot {
     r.seek(start + 480_000);
     r.state().snapshot()
 }
+
+#[test]
+fn prediction_inputs_track_pass_targets_and_expiring_observations() {
+    let mut s = race();
+    let original = input_signature(&s);
+    s.drivers.get_mut(&4).unwrap().position = Some(3);
+    assert_ne!(input_signature(&s), original);
+    let original = input_signature(&s);
+    s.drivers.get_mut(&4).unwrap().interval_time_ms = Some(s.clock_ms - 30_000);
+    assert_ne!(input_signature(&s), original);
+    let fresh = input_signature(&s);
+    s.clock_ms += 1;
+    assert_ne!(input_signature(&s), fresh);
+    let expired = input_signature(&s);
+    s.clock_ms += 1;
+    assert_eq!(
+        input_signature(&s),
+        expired,
+        "clock ticks within the same eligibility state do not trigger inference"
+    );
+}
+
+#[test]
+fn finishing_order_withholds_an_inactive_or_ambiguous_field() {
+    let mut s = race();
+    assert!(predict(&s).iter().any(|p| !p.finish.is_empty()));
+    s.clock_ms += 600_000;
+    let outputs = predict(&s);
+    assert!(outputs.iter().all(|p| p.finish.is_empty()));
+    assert!(outputs
+        .iter()
+        .all(|p| p.factors.iter().any(|f| f.contains("inactive or delayed"))));
+}
 #[test]
 fn forecasts_have_ordered_widening_bands_and_finish_probabilities() {
     let s = race();
@@ -117,6 +150,7 @@ fn measured_race(count: u32) -> pitwall_core::Snapshot {
                 },
                 lap: count,
                 tyre_age: Some(count),
+                interval_time_ms: Some(s.clock_ms),
                 gap: Some((number - 1) as f64 * 2.0),
                 stints: vec![Stint {
                     number: 1,

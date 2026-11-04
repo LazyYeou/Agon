@@ -1,22 +1,8 @@
 use super::*;
+use pitwall_predict::input_signature as prediction_signature;
 use pitwall_state::RaceState;
 use pitwall_store::{PublishedSnapshot, LIVE_BATCH_LIMIT};
 use tokio::sync::RwLock;
-
-fn prediction_signature(view: &Snapshot) -> String {
-    format!(
-        "{:?}",
-        (
-            &view.track_status,
-            &view.weather,
-            view.qualifying_phase,
-            view.drivers
-                .iter()
-                .map(|(number, d)| (number, d.lap, &d.laps, &d.stints, &d.pits, d.tyre_age))
-                .collect::<Vec<_>>()
-        )
-    )
-}
 
 pub struct LiveRuntime {
     pub key: u32,
@@ -219,8 +205,12 @@ impl LiveRuntime {
         app.store.save_live_bootstrap(&archive).await?;
         let runtime = Arc::new(Self::new(archive.clone()));
         let mut watermark = 0;
-        if let Some((snapshot, saved_watermark)) = app.store.load_live_checkpoint(key).await? {
+        if let Some((mut snapshot, saved_watermark)) = app.store.load_live_checkpoint(key).await? {
             if snapshot.session.key == key {
+                pitwall_ingest::metadata::apply_metadata(
+                    &mut snapshot.session,
+                    &mut snapshot.circuit,
+                )?;
                 let mut state = runtime.state.write().await;
                 *state = RaceState::restore(snapshot);
                 state.view_mut().data_status = "data delayed".into();

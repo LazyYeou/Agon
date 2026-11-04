@@ -89,16 +89,35 @@ impl ModelBundle {
     }
     pub fn hazard(&mut self, features: &[f32]) -> Result<f64> {
         ensure!(features.len() == FEATURES.len(), "Wrong feature count");
+        Ok(self.hazards(features)?[0])
+    }
+    pub fn hazards(&mut self, features: &[f32]) -> Result<Vec<f64>> {
+        ensure!(
+            !features.is_empty() && features.len().is_multiple_of(FEATURES.len()),
+            "Wrong hazard batch feature count"
+        );
+        let rows = features.len() / FEATURES.len();
         let input =
-            Tensor::from_array(([1, FEATURES.len()], features.to_vec().into_boxed_slice()))?;
+            Tensor::from_array(([rows, FEATURES.len()], features.to_vec().into_boxed_slice()))?;
         let result = self.pit.run(ort::inputs![input])?;
         let (_, values) = result["probabilities"].try_extract_tensor::<f32>()?;
-        let p = *values.get(1).context("Hazard probability missing")? as f64;
         ensure!(
-            p.is_finite() && (0.0..=1.0).contains(&p),
+            values.len() == rows * 2,
+            "Hazard probability shape mismatch"
+        );
+        let probabilities: Vec<_> = values
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|row| row[1] as f64)
+            .collect();
+        ensure!(
+            probabilities
+                .iter()
+                .all(|p| p.is_finite() && (0.0..=1.0).contains(p)),
             "Invalid hazard probability"
         );
-        Ok(p)
+        Ok(probabilities)
     }
 }
 static MODELS: OnceLock<Result<Mutex<ModelBundle>, String>> = OnceLock::new();
@@ -135,7 +154,7 @@ pub fn apply_models(state: &Snapshot, predictions: &mut [Prediction]) {
             Some("WET") => 4.0,
             _ => -1.0,
         };
-        let mut features = [
+        let features = [
             first.value as f32,
             age as f32,
             compound,
@@ -149,24 +168,20 @@ pub fn apply_models(state: &Snapshot, predictions: &mut [Prediction]) {
         };
         let mut survival = 1.0;
         let mut distribution = vec![];
-        let mut failed = false;
-        for horizon in 1..=30 {
-            features[1] = (age + horizon - 1) as f32;
-            features[5] = (d.lap + horizon - 1) as f32;
-            match bundle.hazard(&features) {
-                Ok(hazard) => {
-                    let mass = survival * hazard;
-                    survival *= 1.0 - hazard;
-                    distribution.push((d.lap + horizon, mass));
-                }
-                Err(_) => {
-                    failed = true;
-                    break;
-                }
-            }
+        let mut horizon_features = Vec::with_capacity(30 * FEATURES.len());
+        for horizon in 0..30 {
+            let mut row = features;
+            row[1] = (age + horizon) as f32;
+            row[5] = (d.lap + horizon) as f32;
+            horizon_features.extend_from_slice(&row);
         }
-        if failed {
+        let Ok(hazards) = bundle.hazards(&horizon_features) else {
             continue;
+        };
+        for (index, hazard) in hazards.into_iter().enumerate() {
+            let mass = survival * hazard;
+            survival *= 1.0 - hazard;
+            distribution.push((d.lap + index as u32 + 1, mass));
         }
         for (i, band) in p.pace.iter_mut().enumerate() {
             band.value += residual;

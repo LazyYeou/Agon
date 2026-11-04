@@ -1526,6 +1526,17 @@ dialog.drawer {
     font-size: 10px;
   }
 }
+.race-risks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: 20px;
+  padding: 18px 0;
+  border-top: 1px solid var(--rule);
+  overflow-wrap: anywhere;
+}
+.race-risks p { margin: 6px 0; }
+.race-risks summary { cursor: pointer; }
+.race-risks li { margin-bottom: 6px; }
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
